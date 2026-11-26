@@ -229,3 +229,56 @@ def summary(R: dict) -> dict:
     if conf == "ต่ำ" and out["action"] in ("LONG", "SHORT"):
         out["headline"] += " (ถ้าเข้า ใช้ lot ครึ่งเดียว)"
     return out
+
+
+# ════════════ เครื่องคิด lot ════════════
+def calc_position(capital: float, risk_pct: float, entry: float, sl: float, tp1: float, tp2: float | None,
+                  xm: dict | None = None) -> dict:
+    """คำนวณ lot จากทุน % ความเสี่ยง จุดเข้า SL TP · คืน error ถ้าตั้งราคาผิดฝั่ง
+    XM GOLD: 1 lot = oz_per_lot ออนซ์ → ราคาขยับ 1 USD = oz_per_lot USD ต่อ 1 lot"""
+    xm = {**C.XM, **(xm or {})}
+    oz, step, min_lot = float(xm["oz_per_lot"]), float(xm["lot_step"]), float(xm["min_lot"])
+    spread, lev = float(xm["spread_usd"]), max(float(xm["leverage"]), 1.0)
+    if min(capital, entry, sl, tp1) <= 0:
+        return {"ok": False, "error": "ใส่ตัวเลขให้ครบ (ต้องมากกว่า 0)"}
+    if sl == entry:
+        return {"ok": False, "error": "SL ต้องไม่เท่ากับราคาเข้า"}
+    long = sl < entry
+    side = "Buy" if long else "Sell"
+    sg = 1 if long else -1
+    if sg * (tp1 - entry) <= 0:
+        return {"ok": False, "error": f"ออเดอร์ {side}: TP ต้อง{'สูง' if long else 'ต่ำ'}กว่าราคาเข้า"}
+    if tp2 and sg * (tp2 - tp1) <= 0:
+        tp2 = None
+    sl_dist = abs(entry - sl)
+    loss_per_lot = (sl_dist + spread) * oz              # รวม spread
+    per_001 = loss_per_lot * 0.01
+    risk_target = capital * risk_pct / 100
+    lots = round_lot(risk_target / loss_per_lot, step)
+    max_by_margin = round_lot(capital * 0.5 * lev / (oz * entry), step)  # ใช้ margin ไม่เกินครึ่งทุน
+    capped = lots > max_by_margin
+    lots = min(lots, max_by_margin)
+    if lots < min_lot:
+        lots = 0.0
+    loss = lots * loss_per_lot
+    gain1 = lots * (abs(tp1 - entry) - spread) * oz
+    rr1 = abs(tp1 - entry) / sl_dist
+    # แบ่งปิด: ครึ่งที่ TP1 ครึ่งที่ TP2 (ถ้า lot แบ่งได้)
+    split = None
+    if tp2 and lots >= 2 * min_lot:
+        l1 = round_lot(lots / 2, step)
+        l2 = round(lots - l1, 2)
+        g = l1 * (abs(tp1 - entry) - spread) * oz + l2 * (abs(tp2 - entry) - spread) * oz
+        split = {"lots_tp1": l1, "lots_tp2": l2, "gain_total": g,
+                 "gain_if_tp1_then_be": l1 * (abs(tp1 - entry) - spread) * oz}
+    margin = lots * oz * entry / lev
+    table = []
+    for k in sorted({min_lot, lots, round_lot(lots / 2, step), round(lots * 2, 2)} - {0.0}):
+        if k >= min_lot:
+            table.append({"lot": k, "loss": k * loss_per_lot, "loss_pct": k * loss_per_lot / capital * 100,
+                          "gain_tp1": k * (abs(tp1 - entry) - spread) * oz, "margin": k * oz * entry / lev})
+    return {"ok": True, "side": side, "long": long, "lots": lots, "sl_dist": sl_dist, "tp1_dist": abs(tp1 - entry),
+            "loss": loss, "loss_pct": loss / capital * 100, "gain_tp1": gain1, "rr1": rr1,
+            "tp2": tp2, "split": split, "margin": margin, "margin_pct": margin / capital * 100,
+            "risk_target": risk_target, "per_001": per_001, "min_lot_risk": min_lot * loss_per_lot,
+            "capped_by_margin": capped, "usd_per_1_move_per_001": 0.01 * oz, "table": table}

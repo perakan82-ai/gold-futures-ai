@@ -72,3 +72,13 @@ def test_probabilities_sane():
     assert all(a >= b for a, b in zip(ps, ps[1:]))            # ยิ่งไกลยิ่งแตะยาก
     ft = st_.tp_before_sl(0.0, 1.5, 1.0, True)
     assert abs(ft["p_tp"] + ft["p_sl"] + ft["p_open"] - 1) < 0.05
+
+
+def test_lot_calculator():
+    k = engine.calc_position(5000, 1, 4000, 3970, 4045, 4075, {"spread_usd": 0.3})
+    assert k["ok"] and k["side"] == "Buy" and k["lots"] == 0.01        # 50$ / 30.3$ ต่อ 0.01 lot
+    assert abs(k["loss"] - 30.3) < 1e-9 and abs(k["gain_tp1"] - 44.7) < 1e-9
+    k = engine.calc_position(20000, 1, 4000, 3970, 4045, 4075, {"spread_usd": 0.3})
+    assert k["lots"] == 0.06 and k["loss"] <= 200 and k["split"]["lots_tp1"] + k["split"]["lots_tp2"] == 0.06
+    assert engine.calc_position(5000, 1, 4000, 4030, 4050, None)["ok"] is False   # Sell แต่ TP สูงกว่า
+    assert engine.calc_position(300, 1, 4000, 3970, 4045, None)["lots"] == 0

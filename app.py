@@ -131,6 +131,55 @@ with st.container(border=True):
     for r in S["reasons"]:
         st.markdown(f"- {r}")
 
+# ═════════════ ③ เครื่องคิด lot ═════════════
+with st.container(border=True):
+    st.markdown("### 🧮 คำนวณ lot จากทุน")
+    cside = R["bias"] if R["bias"] in ("LONG", "SHORT") else "LONG"
+    cp = R["plans"][cside]
+    kk = f"{cside}_{cp['entry']:.2f}"
+    st.caption("ค่าเริ่มต้นมาจากแผนด้านบน" + ("" if R["bias"] != "WAIT" else " (ฝั่งซื้อ เพราะตอนนี้ยังรอ)") +
+               " — แก้ตัวเลขได้ตามที่ตั้งจริงใน MT5")
+    a1, a2 = st.columns(2)
+    cap = a1.number_input("ทุนในพอร์ต (USD)", min_value=10.0, value=float(equity), step=100.0, key=f"cap{equity}")
+    rp = a2.number_input("ยอมเสียต่อไม้ (% ของทุน)", min_value=0.1, max_value=10.0, value=float(risk_pct), step=0.25, key=f"rp{risk_pct}")
+    b1, b2, b3, b4 = st.columns(4)
+    en = b1.number_input("ราคาเข้า", value=round(cp["entry"], 2), step=0.1, format="%.2f", key="en" + kk)
+    sl_ = b2.number_input("Stop Loss", value=round(cp["sl"], 2), step=0.1, format="%.2f", key="sl" + kk)
+    t1 = b3.number_input("Take Profit 1", value=round(cp["tp1"], 2), step=0.1, format="%.2f", key="t1" + kk)
+    t2 = b4.number_input("Take Profit 2 (ไม่ใช้ใส่ 0)", value=round(cp["tp2"], 2), step=0.1, format="%.2f", key="t2" + kk)
+    K = E.calc_position(cap, rp, en, sl_, t1, t2 or None, xm)
+    if not K["ok"]:
+        st.error(K["error"])
+    elif K["lots"] == 0:
+        st.error(f"เปิดไม่ได้: 0.01 lot ก็เสีย {K['min_lot_risk']:,.2f} USD ถ้าโดน SL "
+                 f"(= {K['min_lot_risk'] / cap * 100:.1f}% ของทุน) เกินที่ยอมเสีย {K['risk_target']:,.2f} USD "
+                 f"→ ต้องมีทุนอย่างน้อย {K['min_lot_risk'] / (rp / 100):,.0f} USD หรือวาง SL ให้แคบลง")
+    else:
+        m = st.columns(5)
+        m[0].metric("เปิด", f"{K['lots']:.2f} lot")
+        m[1].metric("ถ้าโดน SL เสีย", f"−{K['loss']:,.2f} $", f"{K['loss_pct']:.2f}% ของทุน", delta_color="off")
+        m[2].metric("ถ้าถึง TP1 ได้", f"+{K['gain_tp1']:,.2f} $", f"R:R 1:{K['rr1']:.2f}", delta_color="off")
+        m[3].metric("Margin ที่ใช้", f"{K['margin']:,.2f} $", f"{K['margin_pct']:.1f}% ของทุน", delta_color="off")
+        m[4].metric("ระยะ SL / TP1", f"{K['sl_dist']:,.2f} / {K['tp1_dist']:,.2f}")
+        otype = E.order_type("LONG" if K["long"] else "SHORT", en, R["price"], R["atr_plan"])
+        st.success(f"**{otype} {K['lots']:.2f} lot @ {en:,.2f} · SL {sl_:,.2f} · TP {t1:,.2f}**")
+        sp = K["split"]
+        if sp:
+            st.markdown(f"- แบ่งปิด: **{sp['lots_tp1']:.2f} lot ที่ TP1 {t1:,.2f}** และ **{sp['lots_tp2']:.2f} lot ที่ TP2 {K['tp2']:,.2f}** "
+                        f"→ ถ้าถึงทั้งคู่ได้ ~{sp['gain_total']:,.2f} $ · พอถึง TP1 ให้เลื่อน SL ของส่วนที่เหลือมาที่ {en:,.2f} (ไม่ขาดทุนแล้ว)")
+        elif K["tp2"]:
+            st.markdown("- lot น้อยเกินกว่าจะแบ่งปิด 2 จุด → ปิดทั้งหมดที่ TP1")
+        st.markdown(f"- ทุก 0.01 lot: ราคาขยับ 1 USD = ได้/เสีย {K['usd_per_1_move_per_001']:.2f} USD · "
+                    f"ไม้นี้ 0.01 lot เสีย {K['per_001']:,.2f} USD ถ้าโดน SL (รวม spread)")
+        if K["capped_by_margin"]:
+            st.warning("ลด lot ลงเพื่อไม่ให้ margin เกินครึ่งของทุน")
+        if K["loss_pct"] > 2:
+            st.warning("เสี่ยงเกิน 2% ของทุนต่อไม้ — สูงกว่าที่แนะนำทั่วไป")
+        with st.expander("เทียบขนาด lot อื่น"):
+            st.dataframe(pd.DataFrame([{"lot": f"{t['lot']:.2f}", "เสียถ้าโดน SL ($)": f"{t['loss']:,.2f}",
+                                        "% ของทุน": f"{t['loss_pct']:.2f}%", "ได้ถ้าถึง TP1 ($)": f"{t['gain_tp1']:,.2f}",
+                                        "Margin ($)": f"{t['margin']:,.2f}"} for t in K["table"]]), hide_index=True)
+
 other = [w for w in R["warnings"] if not w.startswith("มีข่าวแรง") and not any(w.endswith(r[-25:]) for r in S["reasons"])]
 if other:
     with st.expander(f"⚠️ ข้อควรระวังอื่น ({len(other)})"):

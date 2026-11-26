@@ -13,7 +13,6 @@ YF = {
     "silver": "SI=F",
     "dxy": "DX-Y.NYB",
     "gvz": "^GVZ",
-    "usdthb": "THB=X",
     "us10y": "^TNX",
 }
 
@@ -39,18 +38,18 @@ NEWS_QUERIES = [
     "central bank gold buying",
 ]
 
-# ───────── สัญญา ─────────
-# per_usd = เงินที่ได้/เสียต่อ 1 สัญญา เมื่อราคาทองเปลี่ยน 1 USD/oz
-# GF10 คำนวณจากสูตรของ TFEX: XAU × (15.244/31.1035) × (0.965/0.995) × THB/USD
-BAHT_FACTOR = (15.244 / 31.1035) * (0.965 / 0.995)
-CONTRACTS = {
-    "COMEX MGC (Micro 10 oz)": {"per_usd": 10.0, "ccy": "USD", "kind": "usd"},
-    "COMEX GC (100 oz)": {"per_usd": 100.0, "ccy": "USD", "kind": "usd"},
-    "COMEX 1OZ (1 oz)": {"per_usd": 1.0, "ccy": "USD", "kind": "usd"},
-    "TFEX GO (Gold Online ×300)": {"per_usd": 300.0, "ccy": "USD*", "kind": "usd",
-                                   "note": "ตัวคูณ 300 ตามสเปก TFEX — ยืนยันสกุลเงินชำระ/มาร์จินกับโบรกเกอร์ก่อนใช้"},
-    "TFEX GF10 (10 บาททองคำ)": {"per_usd": None, "ccy": "THB", "kind": "gf10", "baht": 10},
+# ───────── สัญญา: XM GOLD (CFD อิงราคาทองสปอต XAU/USD) ─────────
+# หน้าเว็บ XM ไม่ได้แสดงสเปกสัญญา → ค่าด้านล่างเป็นค่ามาตรฐานของตลาด ปรับได้ในแอป
+# ตรวจค่าจริงใน MT4/MT5: คลิกขวาที่ GOLD → Specification
+XM = {
+    "symbol": "GOLD",
+    "oz_per_lot": 100.0,   # 1 lot = 100 oz (มาตรฐาน XAUUSD) · 1 USD/oz = 100 USD ต่อ 1 lot
+    "min_lot": 0.01,
+    "lot_step": 0.01,
+    "leverage": 500,       # XM ให้ 1:1 ถึง 1000:1 · ใส่ตามบัญชีจริง
+    "spread_usd": 0.30,    # spread โดยประมาณ (USD/oz) — ดูค่าจริงในแพลตฟอร์ม
 }
+# Margin XM = lots × contract size × ราคา ÷ min(leverage บัญชี, leverage ของสัญลักษณ์)
 
 # ───────── ความเสี่ยง (ค่าเริ่มต้น ปรับได้ในแอป) ─────────
 RISK_PCT = 1.0        # % ของพอร์ตต่อไม้ (ช่วงที่ใช้กันทั่วไป 0.5–2%)

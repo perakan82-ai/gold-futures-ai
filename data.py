@@ -179,7 +179,7 @@ def load_all() -> dict:
         errors.append("ราคาทอง (Yahoo GC=F) — วิเคราะห์ไม่ได้")
     frames = {"1h": g1h, "4h": resample(g1h, "4h"), "1d": g1d, "1w": resample(g1d, "W-FRI")}
     side = {}
-    for k in ("silver", "dxy", "gvz", "usdthb", "us10y"):
+    for k in ("silver", "dxy", "gvz", "us10y"):
         df = yahoo(C.YF[k], "1d", "5y")
         side[k] = df["close"] if not df.empty else pd.Series(dtype=float)
         if df.empty:
@@ -221,7 +221,6 @@ def synthetic(n: int = 1500, seed: int = 7) -> dict:
         "silver": pd.Series(g1d["close"].values / (80 + np.cumsum(rng.normal(0, 0.3, len(d)))), d),
         "dxy": pd.Series(100 + np.cumsum(rng.normal(0, 0.3, len(d))), d),
         "gvz": pd.Series(np.clip(18 + np.cumsum(rng.normal(0, 0.5, len(d))), 9, 60), d),
-        "usdthb": pd.Series(33 + np.cumsum(rng.normal(0, 0.05, len(d))), d),
         "us10y": pd.Series(4.3 + np.cumsum(rng.normal(0, 0.03, len(d))), d),
     }
     fr = {"real10": pd.Series(2.0 + np.cumsum(rng.normal(0, 0.03, len(d))), d),

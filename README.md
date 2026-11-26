@@ -1,9 +1,10 @@
-# 🥇 Gold Futures AI
+# 🥇 Gold AI — XM GOLD
 
-แดชบอร์ดวิเคราะห์ทองคำล่วงหน้า (COMEX GC/MGC/1OZ, TFEX GO/GF10) บน Streamlit
+แดชบอร์ดวิเคราะห์ทองคำสำหรับเทรด **GOLD (XAU/USD CFD) ใน XM** บน Streamlit
+วิเคราะห์จากข้อมูล COMEX GC=F แล้วเลื่อนระดับราคาให้ตรงกับราคา GOLD ใน XM ที่ผู้ใช้ใส่
 รวมการวิเคราะห์ทางเทคนิคหลาย timeframe, ปัจจัยมหภาค, สถานะกองทุน (COT), Scenario ข่าว และแผนเทรดพร้อมขนาดไม้
 
-> เครื่องมือช่วยวิเคราะห์ ไม่ใช่คำแนะนำการลงทุน · Futures ใช้เลเวอเรจ ขาดทุนได้มากกว่าที่วางไว้
+> เครื่องมือช่วยวิเคราะห์ ไม่ใช่คำแนะนำการลงทุน · CFD ใช้เลเวอเรจสูง ขาดทุนได้เร็ว · มีค่า swap เมื่อถือข้ามคืน
 
 ## สิ่งที่แอปทำ
 | ส่วน | รายละเอียด |
@@ -13,11 +14,11 @@
 | มหภาค | Real yield 10Y (FRED DFII10), ดอลลาร์ DXY พร้อมตรวจ correlation 120 วัน (ถ้าความสัมพันธ์อ่อน จะลดน้ำหนักเอง), Breakeven 5Y, Gold/Silver ratio, **GVZ** |
 | COT | Managed Money net long, percentile 3 ปี (CFTC API) |
 | ข่าว | ปฏิทินเศรษฐกิจ USD → Scenario "ถ้าออกมาสูง/ต่ำ/ตรงคาด ทองไปทางไหน" + กรอบแกว่งจาก GVZ + sentiment พาดหัวข่าว + (ไม่บังคับ) Gemini สรุปทิศทาง |
-| แผนเทรด | Bias รวม −100…+100, โซนเข้า, SL (ATR), TP1/TP2 จากแนวถัดไป (R:R ≥ 1.5), จำนวนสัญญาตาม % ความเสี่ยง, แปลงราคาเป็น GF10 |
+| แผนเทรด XM | Bias รวม −100…+100, โซนเข้า, SL (ATR), TP1/TP2 (R:R ≥ 1.5), **lot ขั้น 0.01** ตาม % ความเสี่ยง (รวม spread), **margin ตาม leverage**, โหมด Swing (ATR 1D) / Intraday (ATR 4H) |
 | Backtest | In-sample 70% / Out-of-sample 30% เพื่อตรวจว่าสัญญาณเทคนิคไม่ได้ overfit |
 
 ## แหล่งข้อมูล (ฟรีทั้งหมด ไม่ต้องใช้ key)
-Yahoo Finance (GC=F, SI=F, DX-Y.NYB, ^GVZ, THB=X) · FRED (DFII10, T5YIE, GVZCLS) · CFTC Public Reporting (รหัสทอง 088691) · ForexFactory calendar JSON · Google News RSS
+Yahoo Finance (GC=F, SI=F, DX-Y.NYB, ^GVZ) · FRED (DFII10, T5YIE, GVZCLS) · CFTC Public Reporting (รหัสทอง 088691) · ForexFactory calendar JSON · Google News RSS
 Gemini ใช้เฉพาะเมื่อใส่ `GEMINI_API_KEY`
 
 ## วิธีรัน
@@ -47,7 +48,8 @@ app.py         หน้าจอ Streamlit
 ```
 
 ## ข้อจำกัด
-- GC=F เป็นสัญญาต่อเนื่อง มีช่องว่างตอนโรล · ราคา TFEX จริงอาจต่างจากที่แปลงเล็กน้อย
-- สเปกสัญญา TFEX GO (ตัวคูณ 300) — ยืนยันสกุลเงินชำระและมาร์จินกับโบรกเกอร์ก่อนใช้
+- XM ไม่เปิด API ราคาสาธารณะ → ต้องใส่ราคา GOLD จาก MT4/MT5 เอง แอปจะเลื่อนทุกระดับตามส่วนต่าง (futures − spot เปลี่ยนช้าๆ)
+- สเปกค่าเริ่มต้น (1 lot = 100 oz, lot ต่ำสุด 0.01, leverage 1:500, spread 0.30) เป็นค่ามาตรฐานตลาด — **ตรวจค่าจริงใน MT5 → GOLD → Specification** แล้วแก้ในแถบซ้าย
+- Margin = lots × contract size × ราคา ÷ leverage
 - Scenario ข่าวเป็นกฎทั่วไป (ตัวเลขร้อน → Fed เข้มงวด → ทองถูกกดดัน) ซึ่งเปลี่ยนได้ตามช่วงตลาด
 - Backtest ทดสอบเฉพาะส่วนเทคนิค ข่าวและมหภาคย้อนหลังไม่ได้ทดสอบ

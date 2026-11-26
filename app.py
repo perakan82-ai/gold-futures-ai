@@ -17,7 +17,7 @@ import data as D
 import engine as E
 
 TH = timezone(timedelta(hours=7))
-st.set_page_config(page_title="Gold Futures AI", page_icon="🥇", layout="wide")
+st.set_page_config(page_title="Gold AI — XM GOLD", page_icon="🥇", layout="wide")
 
 
 @st.cache_data(ttl=900, show_spinner="กำลังดึงข้อมูลตลาด…")
@@ -37,13 +37,20 @@ def fmt(x, n=1):
 # ═════════════ Sidebar ═════════════
 with st.sidebar:
     st.header("⚙️ ตั้งค่า")
-    contract = st.selectbox("สัญญาที่เทรด", list(C.CONTRACTS))
-    spec = C.CONTRACTS[contract]
-    ccy = "THB" if spec["kind"] == "gf10" else "USD"
-    equity = st.number_input(f"เงินในพอร์ต ({ccy})", min_value=100.0,
-                             value=300000.0 if ccy == "THB" else 10000.0, step=1000.0)
+    st.subheader("บัญชี XM · GOLD")
+    xm_price = st.number_input("ราคา GOLD ใน XM ตอนนี้ (USD)", min_value=0.0, value=0.0, step=0.01, format="%.2f",
+                               help="ใส่ราคาจาก MT4/MT5 เพื่อเลื่อนทุกระดับให้ตรงกับราคา XM (0 = ใช้ราคา COMEX ตรงๆ)")
+    equity = st.number_input("เงินในพอร์ต XM (USD)", min_value=10.0, value=1000.0, step=100.0)
+    with st.expander("สเปกสัญญา XM (ตรวจใน MT5 → GOLD → Specification)"):
+        oz = st.number_input("Contract size (oz ต่อ 1 lot)", min_value=1.0, value=C.XM["oz_per_lot"], step=1.0)
+        lev = st.number_input("Leverage บัญชี (1:x)", min_value=1, max_value=1000, value=C.XM["leverage"], step=50)
+        spread = st.number_input("Spread โดยประมาณ (USD/oz)", min_value=0.0, value=C.XM["spread_usd"], step=0.05)
+        min_lot = st.number_input("Lot ต่ำสุด", min_value=0.01, value=C.XM["min_lot"], step=0.01)
+    xm = {"oz_per_lot": oz, "leverage": lev, "spread_usd": spread, "min_lot": min_lot, "lot_step": C.XM["lot_step"]}
+    style = st.radio("สไตล์เทรด", ["Swing (ถือหลายวัน)", "Intraday (ในวัน)"], index=1,
+                     help="Intraday ใช้ ATR และแนวรับแนวต้านจาก 4H/1H → SL แคบกว่า เหมาะกับพอร์ตเล็ก")
     risk_pct = st.slider("ความเสี่ยงต่อไม้ (% ของพอร์ต)", 0.25, 3.0, C.RISK_PCT, 0.25)
-    stop_atr = st.slider("ระยะ SL (× ATR รายวัน จากแนว)", 0.5, 3.0, C.STOP_ATR, 0.25)
+    stop_atr = st.slider("ระยะ SL (× ATR จากแนว)", 0.5, 3.0, C.STOP_ATR, 0.25)
     chart_tf = st.radio("Timeframe กราฟ", ["1h", "4h", "1d", "1w"], index=2, horizontal=True)
     use_ai = st.toggle("ให้ Gemini สรุปทิศทางข่าว", value=False,
                        help="ต้องใส่ GEMINI_API_KEY ใน Streamlit secrets")
@@ -60,25 +67,25 @@ if data["frames"]["1d"].empty:
     st.error("ดึงราคาทองไม่ได้ — เปิด 'โหมดสาธิต' เพื่อดูหน้าตาแอป หรือลองใหม่ภายหลัง")
     st.stop()
 
-R = E.analyze(data, contract, equity, risk_pct, stop_atr, key)
+R = E.analyze(data, equity, risk_pct, stop_atr, key, xm=xm, xm_price=xm_price, intraday=style.startswith("Intraday"))
 if not R["ok"]:
     st.error(R["error"])
     st.stop()
 
 # ═════════════ Header ═════════════
-st.title("🥇 Gold Futures AI")
+st.title("🥇 Gold AI — XM GOLD")
 fetched = pd.Timestamp(data["fetched"]).tz_convert(TH).strftime("%d/%m/%Y %H:%M")
-st.caption(f"ราคาอ้างอิง COMEX GC=F (สัญญาต่อเนื่อง) · อัปเดต {fetched} น. (เวลาไทย) · "
-           "เครื่องมือช่วยวิเคราะห์ ไม่ใช่คำแนะนำการลงทุน")
+off_txt = (f"เลื่อนให้ตรง XM แล้ว ({R['offset']:+.2f} USD จาก COMEX {R['ref_price']:,.2f})" if R["offset"]
+           else "ยังไม่ได้ปรับให้ตรงราคา XM")
+st.caption(f"วิเคราะห์จากข้อมูล COMEX GC=F · {off_txt} · อัปเดต {fetched} น. (เวลาไทย) · "
+           "ทองใน XM เป็น CFD (มี swap ข้ามคืน) · เครื่องมือช่วยวิเคราะห์ ไม่ใช่คำแนะนำการลงทุน")
 
 c1, c2, c3, c4, c5 = st.columns(5)
-c1.metric("ราคา (USD/oz)", fmt(R["price"]))
-if R["usdthb"] and spec["kind"] == "gf10":
-    c1.caption(f"≈ GF10 {fmt(E.to_gf10(R['price'], R['usdthb']), 0)} บาท/บาททองคำ")
+c1.metric("GOLD (USD/oz)", fmt(R["price"], 2))
 bias_txt = {"LONG": "🟢 LONG", "SHORT": "🔴 SHORT", "WAIT": "⚪ รอ"}[R["bias"]]
 c2.metric("มุมมองรวม", bias_txt, f"{R['total']:+.0f} / 100")
 c3.metric("ความเห็นตรงกัน", f"{R['agree'] * 100:.0f}%")
-c4.metric("ATR รายวัน", fmt(R["atr_d"]))
+c4.metric("ATR ที่ใช้วางแผน", fmt(R["atr_plan"], 2), "4H" if R["intraday"] else "1D", delta_color="off")
 g = R["macro"].get("gvz")
 c5.metric("GVZ (ความผันผวน)", fmt(g["value"]) if g else "—", g["regime"] if g else None, delta_color="off")
 
@@ -111,18 +118,18 @@ with tabs[0]:
             rows = [("โซนเข้า", f"{fmt(p['entry_lo'])} – {fmt(p['entry_hi'])}"), ("เหตุผลของโซน", p["entry_why"]),
                     ("Stop loss", fmt(p["sl"])), ("TP1", f"{fmt(p['tp1'])}  (R:R {p['rr1']:.1f})"),
                     ("TP2", f"{fmt(p['tp2'])}  (R:R {p['rr2']:.1f})"), ("ยกเลิกแผนเมื่อ", p["invalidation"]),
-                    ("ระยะเสี่ยง", f"{fmt(p['risk_pts'])} USD/oz")]
-            if R["usdthb"] and spec["kind"] == "gf10":
-                cv = lambda x: fmt(E.to_gf10(x, R["usdthb"]), 0)
-                rows += [("โซนเข้า (GF10)", f"{cv(p['entry_lo'])} – {cv(p['entry_hi'])}"),
-                         ("SL / TP1 / TP2 (GF10)", f"{cv(p['sl'])} / {cv(p['tp1'])} / {cv(p['tp2'])}")]
-            if p["contracts"] is not None:
-                rows += [("เสียต่อ 1 สัญญาถ้าโดน SL", f"{fmt(p['loss_1c'], 0)} {R['ccy']}"),
-                         ("ขนาดไม้ที่แนะนำ", f"{p['contracts']} สัญญา (เสี่ยง {fmt(p['risk_money'], 0)} {R['ccy']})")]
+                    ("ระยะเสี่ยง", f"{fmt(p['risk_pts'], 2)} USD/oz (+ spread {R['xm']['spread_usd']:.2f})"),
+                    ("ขาดทุนต่อ 1.00 lot ถ้าโดน SL", f"{fmt(p['loss_per_lot'], 0)} USD"),
+                    ("Lot ที่แนะนำ", f"{p['lots']:.2f} lot"),
+                    ("ความเสี่ยงจริง", f"{fmt(p['actual_risk'], 2)} USD (เป้า {fmt(p['risk_money'], 2)})"),
+                    ("Margin ที่ใช้ (1:" + str(int(R['xm']['leverage'])) + ")", f"{fmt(p['margin'], 2)} USD")]
             st.table(pd.DataFrame(rows, columns=["รายการ", "ค่า"]).set_index("รายการ"))
-            if p["contracts"] == 0:
-                st.error("พอร์ต/ความเสี่ยงที่ตั้งไว้ไม่พอสำหรับ 1 สัญญานี้ — เลือกสัญญาที่เล็กกว่า หรือข้ามไม้นี้ "
-                         "(อย่าเพิ่มความเสี่ยงเพื่อให้ได้ 1 สัญญา)")
+            if p["lots"] == 0:
+                st.error(f"เงิน/ความเสี่ยงที่ตั้งไว้ไม่พอแม้แต่ lot ต่ำสุด ({R['xm']['min_lot']:.2f} lot ต้องเสี่ยง "
+                         f"{fmt(p['min_lot_risk'], 2)} USD) — ข้ามไม้นี้ หรือรอจุดเข้าที่ SL แคบกว่า "
+                         "(อย่าเพิ่มความเสี่ยงเพื่อให้เข้าได้)")
+            elif p["margin"] > 0.5 * equity:
+                st.warning("Margin ที่ใช้เกินครึ่งของพอร์ต — เสี่ยงโดน margin call ถ้าราคาแกว่งแรง")
 
     st.subheader("แนวรับ / แนวต้านสำคัญ")
     a, b = st.columns(2)
@@ -271,13 +278,14 @@ with tabs[5]:
 **ลำดับการใช้งานที่แนะนำ**
 1. ดู **มุมมองรวม** และ **ความเห็นตรงกัน** — ถ้าต่ำกว่า 50% ให้ถือว่ายังไม่มีจังหวะ
 2. เปิดแท็บ **ข่าว** — ถ้ามีข่าวแรงใน 24 ชม. ให้รอหลังข่าว
-3. ใช้ **โซนเข้า / SL / TP** จากแท็บแผนเทรด · ตั้ง SL ทุกครั้ง · ขนาดไม้ตามที่แอปคำนวณ
+3. ใส่ **ราคา GOLD จาก XM** ที่แถบซ้าย แล้วใช้ **โซนเข้า / SL / TP / lot** จากแท็บแผนเทรด · ตั้ง SL ใน MT4/MT5 ทุกครั้ง
 4. ดูแท็บ **Backtest** — ถ้า Out-of-sample ไม่ผ่าน อย่าเชื่อสัญญาณเทคนิคเพียงลำพัง
 5. ทดลองแบบ paper trade ก่อนใช้เงินจริง
 
 **ข้อจำกัดที่ควรรู้**
-- ราคาจาก GC=F เป็นสัญญาต่อเนื่อง มีช่องว่างตอนโรลสัญญา · ราคา TFEX จริงอาจต่างจากที่แปลงไว้เล็กน้อย (premium/ค่าเงิน)
+- แอปวิเคราะห์จาก COMEX GC=F แล้วเลื่อนให้ตรงราคา XM ที่คุณใส่ · ส่วนต่าง futures กับสปอตเปลี่ยนช้าๆ ควรอัปเดตราคา XM ทุกครั้งที่ใช้
+- GOLD ใน XM เป็น CFD: มีค่า swap เมื่อถือข้ามคืน และ spread กว้างขึ้นช่วงข่าว/ตลาดบาง · สเปก lot ให้ตรวจใน MT5 → Specification
 - Yahoo / ปฏิทินข่าว / RSS เป็นแหล่งฟรี อาจล่าช้าหรือดึงไม่ได้บางครั้ง
-- Futures ใช้เลเวอเรจ ขาดทุนได้เกินเงินที่วางไว้ · มาร์จินถูกปรับขึ้นได้ตอนตลาดผันผวน
+- CFD ใช้เลเวอเรจสูง ขาดทุนได้เร็วมาก · ราคากระโดดข้าม SL ได้ช่วงข่าวหรือตอนเปิดตลาด
 - แอปนี้เป็นเครื่องมือช่วยวิเคราะห์ ไม่ใช่คำแนะนำการลงทุน
 """)

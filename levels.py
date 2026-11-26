@@ -56,11 +56,19 @@ def fib(d1: pd.DataFrame, lookback: int = 120) -> dict:
     return {"swing_high": hi, "swing_low": lo, "direction": "up" if up else "down", "levels": lv}
 
 
-def build(d1: pd.DataFrame, d4: pd.DataFrame, price: float, atr_d: float) -> dict:
+def build(d1: pd.DataFrame, d4: pd.DataFrame, price: float, atr_d: float, d1h: pd.DataFrame | None = None,
+          intraday: bool = False) -> dict:
+    """swing = Swing (ATR 1D, แนวจาก 1D+4H) · intraday = ATR 4H, แนวจาก 4H+1H + pivot/fib/EMA รายวัน"""
     lv: list[dict] = []
-    lv += [dict(r, tf="1D") for r in cluster_levels(d1, atr_d, w=5, lookback=250)]
-    if d4 is not None and not d4.empty and "atr" in d4:
-        lv += [dict(r, tf="4H") for r in cluster_levels(d4, float(d4["atr"].iloc[-1]), w=4, lookback=300)]
+    if intraday:
+        atr_4 = float(d4["atr"].iloc[-1])
+        lv += [dict(r, tf="4H") for r in cluster_levels(d4, atr_4, w=4, lookback=300)]
+        if d1h is not None and not d1h.empty:
+            lv += [dict(r, tf="1H") for r in cluster_levels(d1h, float(d1h["atr"].iloc[-1]), w=5, lookback=300)]
+    else:
+        lv += [dict(r, tf="1D") for r in cluster_levels(d1, atr_d, w=5, lookback=250)]
+        if d4 is not None and not d4.empty and "atr" in d4:
+            lv += [dict(r, tf="4H") for r in cluster_levels(d4, float(d4["atr"].iloc[-1]), w=4, lookback=300)]
     pv = pivots(d1)
     lv += [{"price": v, "touches": 1, "src": f"pivot {k}", "tf": "1D"} for k, v in pv.items()]
     fb = fib(d1)

@@ -23,7 +23,7 @@ def test_news_rules():
 
 def test_engine_and_levels_consistent():
     d = data.synthetic()
-    r = engine.analyze(d, "COMEX 1OZ (1 oz)", 10000)
+    r = engine.analyze(d, 10000)
     assert r["ok"] and -100 <= r["total"] <= 100
     L, S = r["plans"]["LONG"], r["plans"]["SHORT"]
     assert L["sl"] < L["entry"] < L["tp1"] <= L["tp2"] and L["rr1"] >= 1.5 - 1e-9
@@ -32,9 +32,17 @@ def test_engine_and_levels_consistent():
     assert all(z["price"] > r["price"] for z in r["levels"]["resistances"])
 
 
-def test_gf10_formula():
-    # สูตร TFEX: XAU × (15.244/31.1035) × (0.965/0.995) × THB/USD
-    assert abs(engine.to_gf10(4000, 33) - 4000 * 15.244 / 31.1035 * 0.965 / 0.995 * 33) < 1e-6
+def test_xm_lots_and_offset():
+    d = data.synthetic()
+    ref = float(d["frames"]["1h"]["close"].iloc[-1])
+    r = engine.analyze(d, 1000, risk_pct=1.0, xm={"oz_per_lot": 100, "leverage": 500, "spread_usd": 0.3},
+                       xm_price=ref + 25.0)
+    assert abs(r["price"] - (ref + 25.0)) < 1e-6 and abs(r["offset"] - 25.0) < 1e-6
+    p = r["plans"]["LONG"]
+    assert abs(p["loss_per_lot"] - (p["risk_pts"] + 0.3) * 100) < 1e-6
+    assert p["actual_risk"] <= p["risk_money"] + 1e-9          # ไม่เสี่ยงเกินที่ตั้ง
+    assert abs(round(p["lots"] / 0.01) - p["lots"] / 0.01) < 1e-6  # lot เป็นขั้น 0.01
+    assert abs(p["margin"] - p["lots"] * 100 * p["entry"] / 500) < 1e-6
 
 
 def test_no_lookahead_in_votes():

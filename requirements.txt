@@ -1,0 +1,8 @@
+streamlit>=1.40,<2
+pandas>=2.2,<4
+numpy>=1.26,<3
+requests>=2.31,<3
+plotly>=5.22,<7
+feedparser>=6.0,<7
+google-genai>=1.20,<2
+yfinance>=0.2.40

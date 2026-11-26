@@ -84,6 +84,15 @@ p2 = lambda x: f"{x:,.2f}"
 # ═════════════ ② สรุปตรงๆ ═════════════
 with st.container(border=True):
     st.markdown(f"## {S['headline']}")
+    dirp = S.get("direction")
+    if dirp:
+        u, dn_ = dirp["p_up"] * 100, dirp["p_down"] * 100
+        q = st.columns([1, 1, 2])
+        q[0].metric("โอกาสขึ้น (Long)", f"{u:.0f}%")
+        q[1].metric("โอกาสลง (Short)", f"{dn_:.0f}%")
+        q[2].progress(int(round(u)), text=f"ขึ้น {u:.0f}% · ลง {dn_:.0f}% ใน {R['probs']['horizon']}")
+        st.caption(f"จากสถิติย้อนหลัง: แท่ง {R['probs']['tf']} ที่สัญญาณกราฟคล้ายตอนนี้ {dirp['n']:,} ครั้ง "
+                   f"(ค่าเฉลี่ยทุกช่วง ขึ้น {dirp['base_up'] * 100:.0f}%) · นับเฉพาะสัญญาณกราฟ ไม่รวมข่าว/ดอลลาร์")
     st.caption(f"GOLD {p2(R['price'])} · คะแนนรวม {R['total']:+.0f} (เกิน +20 = ซื้อ, ต่ำกว่า −20 = ขาย)")
     for n in S["news_soon"]:
         t = pd.Timestamp(n["time_utc"]).tz_convert(TH).strftime("%H:%M น. %d/%m")
@@ -98,6 +107,16 @@ with st.container(border=True):
         k[2].metric("Stop Loss", p2(o["sl"]))
         k[3].metric("Take Profit", p2(o["tp1"]))
         k[4].metric("Lot", f"{o['lots']:.2f}")
+        pr = o.get("prob")
+        if pr:
+            z = st.columns(4)
+            z[0].metric("โอกาสได้ราคาเข้า", f"{pr['p_fill'] * 100:.0f}%")
+            z[1].metric("โอกาสถึง TP ก่อน SL", f"{pr['p_tp1'] * 100:.0f}%")
+            z[2].metric("โอกาสโดน SL", f"{pr['p_sl'] * 100:.0f}%")
+            z[3].metric("โอกาสถึง TP2", f"{pr['p_tp2'] * 100:.0f}%")
+            st.caption(f"ภายใน {R['probs']['horizon']} · ที่เหลือ {pr['p_open'] * 100:.0f}% = ยังไม่ถึงทั้ง TP และ SL")
+        if S.get("stat_warn"):
+            st.warning(S["stat_warn"])
         st.markdown(f"- ถ้าโดน SL จะเสียประมาณ **{o['risk']:,.2f} USD** · ถ้าถึง TP ได้ประมาณ **{o['risk'] * o['rr1']:,.2f} USD**\n"
                     f"- ถึง TP แล้วไปต่อได้: TP2 {p2(o['tp2'])} (ปิดครึ่งที่ TP แล้วเลื่อน SL มาที่ราคาเข้า)\n"
                     f"- ยกเลิกออเดอร์ถ้า: {o['cancel']}")
@@ -152,6 +171,12 @@ with tabs[0]:
                     ("Lot ที่แนะนำ", f"{p['lots']:.2f} lot"),
                     ("ความเสี่ยงจริง", f"{fmt(p['actual_risk'], 2)} USD (เป้า {fmt(p['risk_money'], 2)})"),
                     ("Margin ที่ใช้ (1:" + str(int(R['xm']['leverage'])) + ")", f"{fmt(p['margin'], 2)} USD")]
+            if p.get("prob"):
+                pp = p["prob"]
+                rows += [("โอกาสได้ราคาเข้า", f"{pp['p_fill'] * 100:.0f}%"),
+                         ("โอกาส TP1 ก่อน SL / โดน SL", f"{pp['p_tp1'] * 100:.0f}% / {pp['p_sl'] * 100:.0f}%"),
+                         ("โอกาสถึง TP2", f"{pp['p_tp2'] * 100:.0f}%"),
+                         ("ผลคาดหวังต่อไม้", f"{pp['ev_R']:+.2f} R")]
             st.table(pd.DataFrame(rows, columns=["รายการ", "ค่า"]).set_index("รายการ"))
             if p["lots"] == 0:
                 st.error(f"เงิน/ความเสี่ยงที่ตั้งไว้ไม่พอแม้แต่ lot ต่ำสุด ({R['xm']['min_lot']:.2f} lot ต้องเสี่ยง "
@@ -162,8 +187,10 @@ with tabs[0]:
 
     st.subheader("แนวรับ / แนวต้านสำคัญ")
     a, b = st.columns(2)
-    lvl = lambda xs: pd.DataFrame([{"ราคา": fmt(z["price"], 2), "ความแข็งแรง": "★" * z["strength"], "ที่มา": z["src"]}
-                                   for z in xs])
+    lvl = lambda xs: pd.DataFrame([{"ราคา": fmt(z["price"], 2),
+                                    "โอกาสแตะ": f"{z['p_touch'] * 100:.0f}%" if "p_touch" in z else "—",
+                                    "ความแข็งแรง": "★" * z["strength"], "ที่มา": z["src"]} for z in xs])
+    st.caption(f"โอกาสแตะ = % ที่ราคาเคยไปถึงระยะเท่านี้ภายใน {R['probs']['horizon']} (สถิติย้อนหลัง)")
     a.markdown("**แนวต้าน (ใกล้ → ไกล)**"); a.dataframe(lvl(R["levels"]["resistances"]), hide_index=True)
     b.markdown("**แนวรับ (ใกล้ → ไกล)**"); b.dataframe(lvl(R["levels"]["supports"]), hide_index=True)
 
@@ -308,7 +335,8 @@ with tabs[5]:
     st.markdown("""
 **ลำดับการใช้งานที่แนะนำ**
 1. ดู **มุมมองรวม** และ **ความเห็นตรงกัน** — ถ้าต่ำกว่า 50% ให้ถือว่ายังไม่มีจังหวะ
-2. เปิดแท็บ **ข่าว** — ถ้ามีข่าวแรงใน 24 ชม. ให้รอหลังข่าว
+2. ดู **% โอกาส** — ถ้าโอกาสถึง TP ต่ำกว่าโอกาสโดน SL มาก หรือผลคาดหวังติดลบ ให้ข้าม
+3. เปิดแท็บ **ข่าว** — ถ้ามีข่าวแรงใน 24 ชม. ให้รอหลังข่าว
 3. ใส่ **ราคา GOLD จาก XM** ที่แถบซ้าย แล้วใช้ **โซนเข้า / SL / TP / lot** จากแท็บแผนเทรด · ตั้ง SL ใน MT4/MT5 ทุกครั้ง
 4. ดูแท็บ **Backtest** — ถ้า Out-of-sample ไม่ผ่าน อย่าเชื่อสัญญาณเทคนิคเพียงลำพัง
 5. ทดลองแบบ paper trade ก่อนใช้เงินจริง

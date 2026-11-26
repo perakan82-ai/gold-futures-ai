@@ -59,3 +59,16 @@ def test_backtest_random_walk_has_no_edge():
     d["high"], d["low"], d["volume"] = d.max(axis=1) * 1.004, d.min(axis=1) * 0.996, 1.0
     b = backtest.run(d)
     assert b["ok"] and b["oos"]["trades"] > 0
+
+
+def test_probabilities_sane():
+    import prob
+    d = indicators.add_all(data.synthetic()["frames"]["4h"])
+    st_ = prob.Stats(d, indicators.tech_votes(d)["score"], 12)
+    assert st_.ok
+    dr = st_.direction(0.0)
+    assert 0 < dr["p_up"] < 1 and abs(dr["p_up"] + dr["p_down"] - 1) < 1e-9
+    ps = [st_.touch(0.0, x, up=True) for x in (0.5, 1, 2, 3)]
+    assert all(a >= b for a, b in zip(ps, ps[1:]))            # ยิ่งไกลยิ่งแตะยาก
+    ft = st_.tp_before_sl(0.0, 1.5, 1.0, True)
+    assert abs(ft["p_tp"] + ft["p_sl"] + ft["p_open"] - 1) < 0.05

@@ -11,6 +11,7 @@ import indicators as I
 import levels as L
 import macro as M
 import news as N
+import prob as P
 
 
 def round_lot(x: float, step: float) -> float:
@@ -69,6 +70,22 @@ def analyze(data: dict, equity: float, risk_pct: float = C.RISK_PCT, stop_atr: f
     lv = L.build(d1, fr["4h"], price, atr_plan, d1h=fr["1h"], intraday=use_4h)
     plans = {side: make_plan(side, price, atr_plan, lv, stop_atr, equity, risk_pct, xm) for side in ("LONG", "SHORT")}
 
+    # ── % จากสถิติย้อนหลัง ──
+    ptf = "4h" if use_4h else "1d"
+    H = 12 if use_4h else 10
+    st_ = P.Stats(fr[ptf], I.tech_votes(fr[ptf])["score"], H)
+    cur = tech[ptf]["score"]
+    probs = {"ok": st_.ok, "tf": ptf.upper(), "H": H,
+             "horizon": "2 วัน (12 แท่ง 4H)" if use_4h else "10 วันทำการ"}
+    if st_.ok:
+        probs["direction"] = st_.direction(cur)
+        for side in ("LONG", "SHORT"):
+            plans[side]["prob"] = P.plan_probs(st_, cur, price, atr_plan, plans[side], side == "LONG")
+        for z in lv["supports"]:
+            z["p_touch"] = st_.touch(cur, (price - z["price"]) / atr_plan, up=False)
+        for z in lv["resistances"]:
+            z["p_touch"] = st_.touch(cur, (z["price"] - price) / atr_plan, up=True)
+
     warn = []
     soon = [s for s in scen if s["impact"] == "High" and s["hours_left"] <= C.EVENT_WARN_H]
     if soon:
@@ -89,7 +106,7 @@ def analyze(data: dict, equity: float, risk_pct: float = C.RISK_PCT, stop_atr: f
 
     return {"ok": True, "price": price, "atr_d": atr_d, "atr_plan": atr_plan, "intraday": use_4h, "frames": fr, "tech": tech, "macro": mac, "cot": cot,
             "scenarios": scen, "sentiment": sent, "news_score": nsc, "parts": parts, "total": float(total),
-            "agree": agree, "bias": bias, "levels": lv, "plans": plans, "warnings": warn,
+            "agree": agree, "bias": bias, "levels": lv, "plans": plans, "warnings": warn, "probs": probs,
             "xm": xm, "offset": offset, "ref_price": ref_px,
             "gemini": N.gemini_outlook(gemini_key, {"price": round(price, 1), "total_score": round(total),
                                                     "parts": {k: round(v, 2) for k, v in parts.items()},
@@ -180,7 +197,8 @@ def summary(R: dict) -> dict:
     a = abs(R["total"])
     conf = "สูง" if (a >= 40 and R["agree"] >= 0.7) else ("กลาง" if (a >= 20 and R["agree"] >= 0.5) else "ต่ำ")
     news_soon = [s for s in R["scenarios"] if s["impact"] == "High" and s["hours_left"] <= C.EVENT_WARN_H]
-    out = {"confidence": conf, "reasons": reasons(R), "news_soon": news_soon, "order": None}
+    out = {"confidence": conf, "reasons": reasons(R), "news_soon": news_soon, "order": None,
+           "direction": R["probs"].get("direction")}
     if R["bias"] == "WAIT":
         sup = R["levels"]["supports"][0]["price"] if R["levels"]["supports"] else None
         res = R["levels"]["resistances"][0]["price"] if R["levels"]["resistances"] else None
@@ -198,7 +216,11 @@ def summary(R: dict) -> dict:
     out["headline"] = ("🟢 ซื้อ (Buy)" if R["bias"] == "LONG" else "🔴 ขาย (Sell)") + f" · ความมั่นใจ{conf}"
     out["order"] = {"type": order_type(R["bias"], p["entry"], price, atr), "entry": p["entry"], "sl": p["sl"],
                     "tp1": p["tp1"], "tp2": p["tp2"], "lots": p["lots"], "risk": p["actual_risk"],
-                    "rr1": p["rr1"], "cancel": p["invalidation"]}
+                    "rr1": p["rr1"], "cancel": p["invalidation"], "prob": p.get("prob")}
+    pr = p.get("prob")
+    if pr and pr["ev_R"] < 0:
+        out["stat_warn"] = (f"สถิติย้อนหลังไม่เข้าข้างแผนนี้: โอกาสถึง TP {pr['p_tp1'] * 100:.0f}% "
+                            f"vs โดน SL {pr['p_sl'] * 100:.0f}% (ผลคาดหวัง {pr['ev_R']:+.2f}R ต่อไม้) — ควรข้ามหรือลด lot")
     if p["lots"] == 0:
         out["headline"] = f"⚪ ไม่เข้า — มุมมอง{'ซื้อ' if R['bias'] == 'LONG' else 'ขาย'} แต่เงินในพอร์ตไม่พอสำหรับไม้นี้"
         out["action"] = "SKIP"

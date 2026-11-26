@@ -36,13 +36,16 @@ def analyze(gold_d: pd.DataFrame, side: dict, fred: dict) -> dict:
 
     # ── Real yield ──
     ry = fred.get("real10", pd.Series(dtype=float))
+    ry_name = "Real yield 10Y (DFII10)"
+    if ry.dropna().empty:  # FRED ใช้ไม่ได้ → ใช้ดอกเบี้ย 10 ปี (nominal) จาก Yahoo ^TNX แทน
+        ry, ry_name = side.get("us10y", pd.Series(dtype=float)), "ดอกเบี้ย 10 ปี (^TNX, สำรองแทน real yield)"
     dry = _chg(ry, 20)
     if dry is not None:
         df = _align(gold.pct_change(), ry.diff())
         corr = float(df.iloc[-120:].corr().iloc[0, 1]) if len(df) > 60 else np.nan
         s = float(np.clip(-dry / 0.25, -1, 1))  # ลง 25bp ใน 20 วัน = +1 เต็ม
         wt = 1.0 if not np.isfinite(corr) else float(np.clip(0.4 + max(0.0, -corr) * 2, 0.4, 1.0))
-        out["components"].append({"name": "Real yield 10Y (DFII10)", "value": float(ry.iloc[-1]),
+        out["components"].append({"name": ry_name, "value": float(ry.iloc[-1]),
                                   "chg": f"{dry * 100:+.0f} bp / 20 วัน", "score": s, "weight": wt,
                                   "corr120": corr,
                                   "read": "ลดลง → หนุนทอง" if dry < 0 else "สูงขึ้น → กดดันทอง"})

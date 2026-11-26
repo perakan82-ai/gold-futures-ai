@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import io
 import logging
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from urllib.parse import quote_plus
 
@@ -29,8 +30,12 @@ def _session() -> requests.Session:
 SESSION = _session()
 
 
-def _get(url: str, **kw) -> requests.Response:
-    r = SESSION.get(url, timeout=C.HTTP_TIMEOUT, **kw)
+FAST = requests.Session()  # ไม่ retry · ใช้กับแหล่งที่อาจบล็อก cloud (เช่น FRED)
+FAST.headers.update(C.UA)
+
+
+def _get(url: str, fast: bool = False, **kw) -> requests.Response:
+    r = (FAST if fast else SESSION).get(url, timeout=8 if fast else C.HTTP_TIMEOUT, **kw)
     r.raise_for_status()
     return r
 
@@ -96,7 +101,8 @@ def parse_fred_csv(text: str) -> pd.Series:
 
 def fred(series_id: str) -> pd.Series:
     try:
-        return parse_fred_csv(_get("https://fred.stlouisfed.org/graph/fredgraph.csv", params={"id": series_id}).text)
+        return parse_fred_csv(_get("https://fred.stlouisfed.org/graph/fredgraph.csv", fast=True,
+                                   params={"id": series_id}).text)
     except Exception as e:  # noqa: BLE001
         log.warning("fred %s: %s", series_id, e)
         return pd.Series(dtype=float)
@@ -171,32 +177,48 @@ def headlines(per_query: int = 8) -> list[dict]:
 
 # ════════════ รวมทั้งหมด ════════════
 def load_all() -> dict:
-    """ดึงทุกอย่างครั้งเดียว · errors = รายชื่อแหล่งที่ดึงไม่ได้"""
+    """ดึงทุกแหล่งพร้อมกัน (ขนาน) · errors = รายชื่อแหล่งที่ดึงไม่ได้"""
     errors: list[str] = []
-    g1h = yahoo(C.YF["gold"], "1h", "730d")
-    g1d = yahoo(C.YF["gold"], "1d", "10y")
+    jobs = {
+        "g1h": (yahoo, (C.YF["gold"], "1h", "730d")),
+        "g1d": (yahoo, (C.YF["gold"], "1d", "10y")),
+        **{f"y_{k}": (yahoo, (C.YF[k], "1d", "5y")) for k in ("silver", "dxy", "gvz", "us10y")},
+        **{f"f_{k}": (fred, (v,)) for k, v in C.FRED.items()},
+        "cot": (cot_gold, ()), "cal": (calendar, ()), "news": (headlines, ()),
+    }
+    with ThreadPoolExecutor(max_workers=len(jobs)) as ex:
+        fut = {k: ex.submit(fn, *args) for k, (fn, args) in jobs.items()}
+        res = {}
+        for k, f in fut.items():
+            try:
+                res[k] = f.result(timeout=90)
+            except Exception as e:  # noqa: BLE001
+                log.warning("job %s: %s", k, e)
+                res[k] = None
+    empty = pd.DataFrame()
+    g1h = res["g1h"] if res["g1h"] is not None else empty
+    g1d = res["g1d"] if res["g1d"] is not None else empty
     if g1d.empty:
         errors.append("ราคาทอง (Yahoo GC=F) — วิเคราะห์ไม่ได้")
     frames = {"1h": g1h, "4h": resample(g1h, "4h"), "1d": g1d, "1w": resample(g1d, "W-FRI")}
     side = {}
     for k in ("silver", "dxy", "gvz", "us10y"):
-        df = yahoo(C.YF[k], "1d", "5y")
-        side[k] = df["close"] if not df.empty else pd.Series(dtype=float)
-        if df.empty:
+        df = res[f"y_{k}"]
+        side[k] = df["close"] if df is not None and not df.empty else pd.Series(dtype=float)
+        if side[k].empty:
             errors.append(f"Yahoo {C.YF[k]}")
-    fr = {k: fred(v) for k, v in C.FRED.items()}
-    for k, v in fr.items():
-        if v.empty:
-            errors.append(f"FRED {C.FRED[k]}")
+    fr = {k: (res[f"f_{k}"] if res[f"f_{k}"] is not None else pd.Series(dtype=float)) for k in C.FRED}
+    if any(v.empty for v in fr.values()):
+        errors.append("FRED (ใช้ดอกเบี้ย 10 ปีจาก Yahoo แทน)")
     if side["gvz"].empty and not fr["gvz_fred"].empty:
         side["gvz"] = fr["gvz_fred"]
-    cot = cot_gold()
+    cot = res["cot"] if res["cot"] is not None else empty
     if cot.empty:
         errors.append("CFTC COT")
-    cal = calendar()
+    cal = res["cal"] or []
     if not cal:
         errors.append("ปฏิทินเศรษฐกิจ")
-    news = headlines()
+    news = res["news"] or []
     if not news:
         errors.append("ข่าว RSS")
     return {"frames": frames, "side": side, "fred": fr, "cot": cot, "calendar": cal, "news": news,

@@ -135,3 +135,75 @@ def make_plan(side: str, price: float, atr: float, lv: dict, stop_atr: float, eq
             "loss_per_lot": loss_per_lot, "actual_risk": lots * loss_per_lot, "margin": margin,
             "min_lot_risk": float(xm["min_lot"]) * loss_per_lot,
             "invalidation": f"ปิดแท่ง 4H {'ต่ำกว่า' if side == 'LONG' else 'สูงกว่า'} {sl:,.2f}"}
+
+
+# ════════════ สรุปภาษาคน (ใช้แสดงบนสุดของแอป) ════════════
+PART_TH = {"tech_1d": "กราฟรายวัน", "tech_4h": "กราฟ 4 ชม.", "tech_1h": "กราฟ 1 ชม.", "macro": "ดอลลาร์/ดอกเบี้ย",
+           "cot": "สถานะกองทุน (COT)", "news": "ข่าว"}
+
+
+def order_type(side: str, entry: float, price: float, atr: float) -> str:
+    """แปลงแผนเป็นประเภทออเดอร์ใน MT4/MT5"""
+    if abs(entry - price) <= 0.1 * atr:
+        return "Buy (ราคาตลาด)" if side == "LONG" else "Sell (ราคาตลาด)"
+    if side == "LONG":
+        return "Buy Limit" if entry < price else "Buy Stop"
+    return "Sell Limit" if entry > price else "Sell Stop"
+
+
+def reasons(R: dict, k: int = 3) -> list[str]:
+    """เหตุผลหลัก k ข้อ เรียงตามน้ำหนักที่ดันคะแนนรวม"""
+    out = []
+    contrib = sorted(R["parts"].items(), key=lambda kv: -abs(kv[1] * C.WEIGHTS[kv[0]]))
+    for key, v in contrib:
+        if abs(v) < 0.1:
+            continue
+        d = "หนุนขึ้น" if v > 0 else "กดลง"
+        if key == "macro" and R["macro"]["components"]:
+            c = max(R["macro"]["components"], key=lambda c: abs(c["score"] * c["weight"]))
+            out.append(f"{c['name']} {c['chg']} → {c['read']}")
+        elif key == "cot" and R["cot"].get("available"):
+            out.append(f"COT: {R['cot']['read']}")
+        elif key == "news" and R["scenarios"]:
+            s = R["scenarios"][0]
+            out.append(f"ข่าว{d}ทอง · ข่าวถัดไป {s['event']} ({s['expectation']})")
+        else:
+            out.append(f"{PART_TH[key]}{d} (คะแนน {v:+.2f})")
+        if len(out) >= k:
+            break
+    return out or ["ทุกปัจจัยเป็นกลาง ไม่มีอะไรดันชัดเจน"]
+
+
+def summary(R: dict) -> dict:
+    """ข้อความตรงๆ: ทำอะไร · ออเดอร์ · เหตุผล · สิ่งที่ห้ามพลาด"""
+    price, atr = R["price"], R["atr_plan"]
+    a = abs(R["total"])
+    conf = "สูง" if (a >= 40 and R["agree"] >= 0.7) else ("กลาง" if (a >= 20 and R["agree"] >= 0.5) else "ต่ำ")
+    news_soon = [s for s in R["scenarios"] if s["impact"] == "High" and s["hours_left"] <= C.EVENT_WARN_H]
+    out = {"confidence": conf, "reasons": reasons(R), "news_soon": news_soon, "order": None}
+    if R["bias"] == "WAIT":
+        sup = R["levels"]["supports"][0]["price"] if R["levels"]["supports"] else None
+        res = R["levels"]["resistances"][0]["price"] if R["levels"]["resistances"] else None
+        out["action"] = "WAIT"
+        out["headline"] = "⚪ ยังไม่เข้า — สัญญาณยังไม่ชัด"
+        watch = []
+        if sup:
+            watch.append(f"ถ้าราคาลงมาแถว {sup:,.2f} (แนวรับ) แล้วยืนได้ → ดูฝั่ง **ซื้อ**")
+        if res:
+            watch.append(f"ถ้าราคาขึ้นไปแถว {res:,.2f} (แนวต้าน) แล้วไม่ผ่าน → ดูฝั่ง **ขาย**")
+        out["watch"] = watch
+        return out
+    p = R["plans"][R["bias"]]
+    out["action"] = R["bias"]
+    out["headline"] = ("🟢 ซื้อ (Buy)" if R["bias"] == "LONG" else "🔴 ขาย (Sell)") + f" · ความมั่นใจ{conf}"
+    out["order"] = {"type": order_type(R["bias"], p["entry"], price, atr), "entry": p["entry"], "sl": p["sl"],
+                    "tp1": p["tp1"], "tp2": p["tp2"], "lots": p["lots"], "risk": p["actual_risk"],
+                    "rr1": p["rr1"], "cancel": p["invalidation"]}
+    if p["lots"] == 0:
+        out["headline"] = f"⚪ ไม่เข้า — มุมมอง{'ซื้อ' if R['bias'] == 'LONG' else 'ขาย'} แต่เงินในพอร์ตไม่พอสำหรับไม้นี้"
+        out["action"] = "SKIP"
+    elif news_soon:
+        out["headline"] += " · แต่รอหลังข่าวก่อน"
+    if conf == "ต่ำ" and out["action"] in ("LONG", "SHORT"):
+        out["headline"] += " (ถ้าเข้า ใช้ lot ครึ่งเดียว)"
+    return out

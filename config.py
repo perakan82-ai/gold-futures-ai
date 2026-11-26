@@ -1,7 +1,7 @@
 """ค่าตั้งค่าทั้งหมดของ Gold Futures AI"""
 from __future__ import annotations
 
-VERSION = "1.0.0"
+VERSION = "1.1.0"
 
 HTTP_TIMEOUT = 20
 UA = {"User-Agent": "Mozilla/5.0 (GoldFuturesAI; personal research dashboard)"}

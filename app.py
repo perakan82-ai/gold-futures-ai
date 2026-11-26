@@ -34,40 +34,38 @@ def fmt(x, n=1):
     return "—" if x is None or (isinstance(x, float) and not np.isfinite(x)) else f"{x:,.{n}f}"
 
 
-# ═════════════ Sidebar ═════════════
+# ═════════════ Sidebar (ใส่แค่ 3 อย่างก็ใช้ได้) ═════════════
 with st.sidebar:
-    st.header("⚙️ ตั้งค่า")
-    st.subheader("บัญชี XM · GOLD")
-    xm_price = st.number_input("ราคา GOLD ใน XM ตอนนี้ (USD)", min_value=0.0, value=0.0, step=0.01, format="%.2f",
-                               help="ใส่ราคาจาก MT4/MT5 เพื่อเลื่อนทุกระดับให้ตรงกับราคา XM (0 = ใช้ราคา COMEX ตรงๆ)")
+    st.header("① ใส่ข้อมูล 3 อย่าง")
+    xm_price = st.number_input("ราคา GOLD ใน XM ตอนนี้", min_value=0.0, value=0.0, step=0.01, format="%.2f",
+                               help="ดูจาก MT4/MT5 แล้วพิมพ์ใส่ ทุกราคาในแอปจะตรงกับ XM (ใส่ 0 = ใช้ราคา COMEX)")
     equity = st.number_input("เงินในพอร์ต XM (USD)", min_value=10.0, value=1000.0, step=100.0)
-    with st.expander("สเปกสัญญา XM (ตรวจใน MT5 → GOLD → Specification)"):
-        oz = st.number_input("Contract size (oz ต่อ 1 lot)", min_value=1.0, value=C.XM["oz_per_lot"], step=1.0)
-        lev = st.number_input("Leverage บัญชี (1:x)", min_value=1, max_value=1000, value=C.XM["leverage"], step=50)
-        spread = st.number_input("Spread โดยประมาณ (USD/oz)", min_value=0.0, value=C.XM["spread_usd"], step=0.05)
-        min_lot = st.number_input("Lot ต่ำสุด", min_value=0.01, value=C.XM["min_lot"], step=0.01)
-    xm = {"oz_per_lot": oz, "leverage": lev, "spread_usd": spread, "min_lot": min_lot, "lot_step": C.XM["lot_step"]}
-    style = st.radio("สไตล์เทรด", ["Swing (ถือหลายวัน)", "Intraday (ในวัน)"], index=1,
-                     help="Intraday ใช้ ATR และแนวรับแนวต้านจาก 4H/1H → SL แคบกว่า เหมาะกับพอร์ตเล็ก")
-    risk_pct = st.slider("ความเสี่ยงต่อไม้ (% ของพอร์ต)", 0.25, 3.0, C.RISK_PCT, 0.25)
-    stop_atr = st.slider("ระยะ SL (× ATR จากแนว)", 0.5, 3.0, C.STOP_ATR, 0.25)
-    chart_tf = st.radio("Timeframe กราฟ", ["1h", "4h", "1d", "1w"], index=2, horizontal=True)
-    use_ai = st.toggle("ให้ Gemini สรุปทิศทางข่าว", value=False,
-                       help="ต้องใส่ GEMINI_API_KEY ใน Streamlit secrets")
-    demo = st.toggle("โหมดสาธิต (ข้อมูลจำลอง)", value=os.environ.get("GOLD_DEMO") == "1")
-    if st.button("🔄 ดึงข้อมูลใหม่"):
+    style = st.radio("เทรดแบบไหน", ["ในวัน (Intraday)", "ถือหลายวัน (Swing)"], index=0,
+                     help="ในวัน = SL แคบกว่า เหมาะกับพอร์ตเล็ก · ถือหลายวัน = SL กว้าง มีค่า swap ข้ามคืน")
+    if st.button("🔄 อัปเดตข้อมูลตลาด", width="stretch"):
         load.clear()
-    st.caption(f"v{C.VERSION} · ข้อมูลเก็บไว้ 15 นาที")
+    with st.expander("ตั้งค่าเพิ่มเติม (ไม่ต้องแก้ก็ได้)"):
+        risk_pct = st.slider("ความเสี่ยงต่อไม้ (% ของพอร์ต)", 0.25, 3.0, C.RISK_PCT, 0.25)
+        stop_atr = st.slider("ระยะ SL (× ATR จากแนว)", 0.5, 3.0, C.STOP_ATR, 0.25)
+        st.caption("สเปก XM — ตรวจใน MT5: คลิกขวา GOLD → Specification")
+        oz = st.number_input("oz ต่อ 1 lot", min_value=1.0, value=C.XM["oz_per_lot"], step=1.0)
+        lev = st.number_input("Leverage (1:x)", min_value=1, max_value=1000, value=C.XM["leverage"], step=50)
+        spread = st.number_input("Spread (USD)", min_value=0.0, value=C.XM["spread_usd"], step=0.05)
+        min_lot = st.number_input("Lot ต่ำสุด", min_value=0.01, value=C.XM["min_lot"], step=0.01)
+        use_ai = st.toggle("ให้ Gemini สรุปข่าว", value=False, help="ต้องใส่ GEMINI_API_KEY ใน Streamlit secrets")
+        demo = st.toggle("โหมดสาธิต (ข้อมูลจำลอง)", value=os.environ.get("GOLD_DEMO") == "1")
+    xm = {"oz_per_lot": oz, "leverage": lev, "spread_usd": spread, "min_lot": min_lot, "lot_step": C.XM["lot_step"]}
+    st.caption(f"v{C.VERSION} · ข้อมูลตลาดอัปเดตทุก 15 นาที")
 
 key = st.secrets.get("GEMINI_API_KEY", "") if use_ai else ""
 data = load(demo)
 if data["errors"]:
-    st.warning("แหล่งข้อมูลที่ใช้ไม่ได้รอบนี้: " + " · ".join(data["errors"]))
+    st.caption("⚠️ แหล่งข้อมูลที่ใช้ไม่ได้รอบนี้: " + " · ".join(data["errors"]))
 if data["frames"]["1d"].empty:
     st.error("ดึงราคาทองไม่ได้ — เปิด 'โหมดสาธิต' เพื่อดูหน้าตาแอป หรือลองใหม่ภายหลัง")
     st.stop()
 
-R = E.analyze(data, equity, risk_pct, stop_atr, key, xm=xm, xm_price=xm_price, intraday=style.startswith("Intraday"))
+R = E.analyze(data, equity, risk_pct, stop_atr, key, xm=xm, xm_price=xm_price, intraday=style.startswith("ในวัน"))
 if not R["ok"]:
     st.error(R["error"])
     st.stop()
@@ -80,19 +78,50 @@ off_txt = (f"เลื่อนให้ตรง XM แล้ว ({R['offset']:
 st.caption(f"วิเคราะห์จากข้อมูล COMEX GC=F · {off_txt} · อัปเดต {fetched} น. (เวลาไทย) · "
            "ทองใน XM เป็น CFD (มี swap ข้ามคืน) · เครื่องมือช่วยวิเคราะห์ ไม่ใช่คำแนะนำการลงทุน")
 
-c1, c2, c3, c4, c5 = st.columns(5)
-c1.metric("GOLD (USD/oz)", fmt(R["price"], 2))
-bias_txt = {"LONG": "🟢 LONG", "SHORT": "🔴 SHORT", "WAIT": "⚪ รอ"}[R["bias"]]
-c2.metric("มุมมองรวม", bias_txt, f"{R['total']:+.0f} / 100")
-c3.metric("ความเห็นตรงกัน", f"{R['agree'] * 100:.0f}%")
-c4.metric("ATR ที่ใช้วางแผน", fmt(R["atr_plan"], 2), "4H" if R["intraday"] else "1D", delta_color="off")
-g = R["macro"].get("gvz")
-c5.metric("GVZ (ความผันผวน)", fmt(g["value"]) if g else "—", g["regime"] if g else None, delta_color="off")
+S = E.summary(R)
+p2 = lambda x: f"{x:,.2f}"
 
-for w in R["warnings"]:
-    st.warning(w)
+# ═════════════ ② สรุปตรงๆ ═════════════
+with st.container(border=True):
+    st.markdown(f"## {S['headline']}")
+    st.caption(f"GOLD {p2(R['price'])} · คะแนนรวม {R['total']:+.0f} (เกิน +20 = ซื้อ, ต่ำกว่า −20 = ขาย)")
+    for n in S["news_soon"]:
+        t = pd.Timestamp(n["time_utc"]).tz_convert(TH).strftime("%H:%M น. %d/%m")
+        st.error(f"⏰ ข่าว **{n['event']}** ออก {t} (อีก {n['hours_left']:.0f} ชม.) — อย่าเปิดไม้ก่อนข่าว "
+                 f"ราคาอาจแกว่ง ±{n['exp_move_1sd'] or 0:,.0f} USD และกระโดดข้าม SL ได้")
+    if S["order"] and S["action"] in ("LONG", "SHORT"):
+        o = S["order"]
+        st.markdown("**ตั้งออเดอร์ใน MT5 แบบนี้**")
+        k = st.columns(5)
+        k[0].metric("ออเดอร์", o["type"])
+        k[1].metric("ราคาเข้า", p2(o["entry"]))
+        k[2].metric("Stop Loss", p2(o["sl"]))
+        k[3].metric("Take Profit", p2(o["tp1"]))
+        k[4].metric("Lot", f"{o['lots']:.2f}")
+        st.markdown(f"- ถ้าโดน SL จะเสียประมาณ **{o['risk']:,.2f} USD** · ถ้าถึง TP ได้ประมาณ **{o['risk'] * o['rr1']:,.2f} USD**\n"
+                    f"- ถึง TP แล้วไปต่อได้: TP2 {p2(o['tp2'])} (ปิดครึ่งที่ TP แล้วเลื่อน SL มาที่ราคาเข้า)\n"
+                    f"- ยกเลิกออเดอร์ถ้า: {o['cancel']}")
+    elif S["action"] == "SKIP" and S["order"]:
+        o = S["order"]
+        st.markdown(f"ไม้นี้ต้องวาง SL ห่าง {abs(o['entry'] - o['sl']):,.2f} USD — แม้ 0.01 lot ก็เสี่ยงเกินที่ตั้งไว้ "
+                    f"({risk_pct:.2f}% ของ {equity:,.0f} USD) **รอจังหวะที่ SL แคบกว่า**" + ("" if R["intraday"] else " หรือเปลี่ยนเป็นเทรดในวัน"))
+    else:
+        for w in S.get("watch", []):
+            st.markdown(f"- {w}")
+    st.markdown("**ทำไม**")
+    for r in S["reasons"]:
+        st.markdown(f"- {r}")
 
-tabs = st.tabs(["🎯 แผนเทรด", "📈 กราฟ & Indicator", "🌍 มหภาค & COT", "📰 ข่าว & Scenario", "🧪 Backtest", "📘 วิธีใช้"])
+other = [w for w in R["warnings"] if not w.startswith("มีข่าวแรง") and not any(w.endswith(r[-25:]) for r in S["reasons"])]
+if other:
+    with st.expander(f"⚠️ ข้อควรระวังอื่น ({len(other)})"):
+        for w in other:
+            st.markdown(f"- {w}")
+
+st.divider()
+st.caption("รายละเอียดด้านล่างสำหรับคนที่อยากดูลึก — ใช้แค่กล่องด้านบนก็พอ")
+chart_tf = "1d"
+tabs = st.tabs(["📋 แผนทั้ง 2 ฝั่ง", "📈 กราฟ", "🌍 ดอลลาร์/ดอกเบี้ย", "📰 ข่าว", "🧪 ทดสอบย้อนหลัง", "📘 วิธีใช้"])
 
 # ═════════════ 1) แผนเทรด ═════════════
 with tabs[0]:
@@ -115,9 +144,9 @@ with tabs[0]:
             st.markdown(f"### {'⭐ ' if main else ''}แผน {side}" + ("" if main else " (สำรอง / ถ้าสถานการณ์เปลี่ยน)"))
             if R["bias"] == "WAIT":
                 st.info("คะแนนรวมยังไม่ชัด — แผนนี้ใช้เมื่อราคามาถึงโซนและมีสัญญาณยืนยัน")
-            rows = [("โซนเข้า", f"{fmt(p['entry_lo'])} – {fmt(p['entry_hi'])}"), ("เหตุผลของโซน", p["entry_why"]),
-                    ("Stop loss", fmt(p["sl"])), ("TP1", f"{fmt(p['tp1'])}  (R:R {p['rr1']:.1f})"),
-                    ("TP2", f"{fmt(p['tp2'])}  (R:R {p['rr2']:.1f})"), ("ยกเลิกแผนเมื่อ", p["invalidation"]),
+            rows = [("โซนเข้า", f"{fmt(p['entry_lo'], 2)} – {fmt(p['entry_hi'], 2)}"), ("เหตุผลของโซน", p["entry_why"]),
+                    ("Stop loss", fmt(p["sl"], 2)), ("TP1", f"{fmt(p['tp1'], 2)}  (R:R {p['rr1']:.1f})"),
+                    ("TP2", f"{fmt(p['tp2'], 2)}  (R:R {p['rr2']:.1f})"), ("ยกเลิกแผนเมื่อ", p["invalidation"]),
                     ("ระยะเสี่ยง", f"{fmt(p['risk_pts'], 2)} USD/oz (+ spread {R['xm']['spread_usd']:.2f})"),
                     ("ขาดทุนต่อ 1.00 lot ถ้าโดน SL", f"{fmt(p['loss_per_lot'], 0)} USD"),
                     ("Lot ที่แนะนำ", f"{p['lots']:.2f} lot"),
@@ -133,13 +162,14 @@ with tabs[0]:
 
     st.subheader("แนวรับ / แนวต้านสำคัญ")
     a, b = st.columns(2)
-    lvl = lambda xs: pd.DataFrame([{"ราคา": fmt(z["price"]), "ความแข็งแรง": "★" * z["strength"], "ที่มา": z["src"]}
+    lvl = lambda xs: pd.DataFrame([{"ราคา": fmt(z["price"], 2), "ความแข็งแรง": "★" * z["strength"], "ที่มา": z["src"]}
                                    for z in xs])
     a.markdown("**แนวต้าน (ใกล้ → ไกล)**"); a.dataframe(lvl(R["levels"]["resistances"]), hide_index=True)
     b.markdown("**แนวรับ (ใกล้ → ไกล)**"); b.dataframe(lvl(R["levels"]["supports"]), hide_index=True)
 
 # ═════════════ 2) กราฟ ═════════════
 with tabs[1]:
+    chart_tf = st.radio("Timeframe", ["1h", "4h", "1d", "1w"], index=1, horizontal=True)
     d = R["frames"][chart_tf].tail({"1h": 300, "4h": 300, "1d": 250, "1w": 200}[chart_tf])
     fig = make_subplots(rows=3, cols=1, shared_xaxes=True, row_heights=[0.6, 0.2, 0.2], vertical_spacing=0.03)
     fig.add_trace(go.Candlestick(x=d.index, open=d.open, high=d.high, low=d.low, close=d.close, name="ราคา"), 1, 1)
@@ -195,6 +225,7 @@ with tabs[2]:
         st.markdown("**บริบทเพิ่มเติม (ไม่นำไปคิดคะแนน)**")
         st.dataframe(pd.DataFrame([{"ตัวชี้วัด": c["name"], "ล่าสุด": fmt(c["value"], 2), "รายละเอียด": c["chg"],
                                     "อ่านว่า": c["read"]} for c in m["context"]]), hide_index=True, width="stretch")
+    g = m.get("gvz")
     if g:
         st.markdown(f"**GVZ {g['value']:.1f}** ({g['regime']}, สูงกว่า {g['pct_1y']:.0f}% ของ 1 ปี) → "
                     f"กรอบเคลื่อนไหวคาดการณ์ ~±{g['implied_daily_move_pct']:.2f}% ต่อวัน "

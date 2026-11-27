@@ -45,6 +45,11 @@ def pivots(d1: pd.DataFrame) -> dict:
 
 
 def fib(d1: pd.DataFrame, lookback: int = 120) -> dict:
+    """Retracement มาตรฐาน + 0.886 (Gartley/Bat ratio ที่ใช้กันทั่วไปในทองคำ/FX ไม่ใช่เฉพาะคริปโต)
+
+    ไม่ใส่ 0.942 แบบที่ทำใน crypto-scanner — ระดับนั้นสะท้อนการย่อลึกจากภาวะ leverage เกินตัวที่
+    พบมากในคริปโต ไม่ใช่พฤติกรรมทั่วไปของทองคำ ใส่ไปโดยไม่มีหลักฐานรองรับจะเป็นแค่เลขลอยๆ
+    """
     x = d1.tail(lookback)
     if x.empty:
         return {}
@@ -52,7 +57,7 @@ def fib(d1: pd.DataFrame, lookback: int = 120) -> dict:
     hi, lo = float(x["high"].max()), float(x["low"].min())
     up = lo_i < hi_i  # ขาขึ้นล่าสุด: วัด retracement ลงจาก high
     rng = hi - lo
-    lv = {f"{r:.3f}": (hi - r * rng) if up else (lo + r * rng) for r in (0.236, 0.382, 0.5, 0.618, 0.786)}
+    lv = {f"{r:.3f}": (hi - r * rng) if up else (lo + r * rng) for r in (0.236, 0.382, 0.5, 0.618, 0.786, 0.886)}
     return {"swing_high": hi, "swing_low": lo, "direction": "up" if up else "down", "levels": lv}
 
 
